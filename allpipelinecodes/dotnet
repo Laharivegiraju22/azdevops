@@ -1,0 +1,87 @@
+# ASP.NET
+# Build and test ASP.NET projects.
+# Add steps that publish symbols, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/apps/aspnet/build-aspnet-4
+
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+stages:
+ 
+ - stage: Build_WebApp
+   displayName: 'build WebApp'
+   variables:
+       solution: '**/*.sln'
+       buildPlatform: 'Any CPU'
+       buildConfiguration: 'Release'
+   jobs:
+   - job: buildjob
+     steps:
+     - task: NuGetToolInstaller@1
+
+     - task: NuGetCommand@2
+       inputs:
+         restoreSolution: '$(solution)'
+
+     - task: VSBuild@1
+       inputs:
+         solution: '$(solution)'
+         msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactStagingDirectory)"'
+         platform: '$(buildPlatform)'
+         configuration: '$(buildConfiguration)'
+
+     - task: VSTest@2
+       inputs:
+         platform: '$(buildPlatform)'
+         configuration: '$(buildConfiguration)'
+
+     - task: DotNetCoreCLI@2
+       inputs:
+         command: 'publish'
+         publishWebProjects: true
+         arguments: '--configuration $(BuildConfiguration) --output $(build.artifactstagingdirectory)'
+
+     - task: PublishBuildArtifacts@1
+       inputs:
+         PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+         ArtifactName: 'drop'
+         publishLocation: 'Container'
+
+
+ - stage: Deploy_WebApp
+   displayName: 'Deploy WebApp'
+ 
+   jobs:
+   - deployment: prod
+     displayName: Blue Deployment
+     pool: 
+       vmImage: windows-latest
+   
+     environment: 'prod'
+     strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadBuildArtifacts@0
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'drop'
+              itemPattern: '*.zip'
+              downloadPath: '$(System.ArtifactsDirectory)'
+            enabled: false 
+          - task: AzureRmWebAppDeployment@4
+            inputs:
+              ConnectionType: 'AzureRM'
+              azureSubscription: 'Free Trial (60584be9-98a4-4707-be50-badf2b4fb922)'
+              appType: 'webApp'
+              WebAppName: 'lahari-dotnet-yamldeploy'
+              packageForLinux: '$(Pipeline.Workspace)/**/*.zip'
+              enableCustomDeployment: true
+              DeploymentType: 'webDeploy'
+              RemoveAdditionalFilesFlag: true
+              enableXmlVariableSubstitution: true
+            enabled: true 
